@@ -107,6 +107,7 @@ export function Insights({ projectId }: InsightsProps) {
   const [showSidebar, setShowSidebar] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load session and set up listeners on mount
@@ -118,7 +119,9 @@ export function Insights({ projectId }: InsightsProps) {
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (scrollViewportRef.current) {
+      scrollViewportRef.current.scrollTop = scrollViewportRef.current.scrollHeight;
+    }
   }, [session?.messages, streamingContent]);
 
   // Focus textarea on mount
@@ -259,7 +262,7 @@ export function Insights({ projectId }: InsightsProps) {
         </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-6 py-4">
+      <ScrollArea className="flex-1 px-6 py-4" viewportRef={scrollViewportRef}>
         {messages.length === 0 && !streamingContent ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -318,7 +321,7 @@ export function Insights({ projectId }: InsightsProps) {
                     Assistant
                   </div>
                   {streamingContent && (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div className="prose prose-sm dark:prose-invert max-w-none break-words">
                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                         {streamingContent}
                       </ReactMarkdown>
@@ -426,7 +429,7 @@ function MessageBubble({
         <div className="text-sm font-medium text-foreground">
           {isUser ? 'You' : 'Assistant'}
         </div>
-        <div className="prose prose-sm dark:prose-invert max-w-none">
+        <div className="prose prose-sm dark:prose-invert max-w-none break-words">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
             {message.content}
           </ReactMarkdown>

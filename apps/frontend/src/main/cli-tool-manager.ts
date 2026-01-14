@@ -952,7 +952,23 @@ class CLIToolManager {
 
       // Claude CLI version output format: "claude-code version X.Y.Z" or similar
       const match = version.match(/(\d+\.\d+\.\d+)/);
-      const versionStr = match ? match[1] : version.split('\n')[0];
+      let versionStr: string;
+
+      if (match) {
+        versionStr = match[1];
+      } else {
+        // Fallback: try to extract first non-empty line
+        const firstLine = version.split('\n')[0].trim();
+        // If first line is non-empty and looks reasonable (not an error message), use it
+        if (firstLine && !firstLine.toLowerCase().includes('error') && !firstLine.toLowerCase().includes('command not found')) {
+          versionStr = firstLine;
+        } else {
+          // Last resort: mark as "unknown" instead of failing validation
+          // This ensures CLI is detected even if version format changes
+          console.warn('[validateClaude] Could not parse version from output:', version);
+          versionStr = 'unknown';
+        }
+      }
 
       return {
         valid: true,
@@ -1070,7 +1086,23 @@ class CLIToolManager {
 
       const version = stdout.trim();
       const match = version.match(/(\d+\.\d+\.\d+)/);
-      const versionStr = match ? match[1] : version.split('\n')[0];
+      let versionStr: string;
+
+      if (match) {
+        versionStr = match[1];
+      } else {
+        // Fallback: try to extract first non-empty line
+        const firstLine = version.split('\n')[0].trim();
+        // If first line is non-empty and looks reasonable (not an error message), use it
+        if (firstLine && !firstLine.toLowerCase().includes('error') && !firstLine.toLowerCase().includes('command not found')) {
+          versionStr = firstLine;
+        } else {
+          // Last resort: mark as "unknown" instead of failing validation
+          // This ensures CLI is detected even if version format changes
+          console.warn('[validateClaudeAsync] Could not parse version from output:', version);
+          versionStr = 'unknown';
+        }
+      }
 
       return {
         valid: true,

@@ -117,8 +117,14 @@ export class InsightsExecutor extends EventEmitter {
       args.push('--thinking-level', modelConfig.thinkingLevel);
     }
 
-    // Spawn Python process
-    const proc = spawn(this.config.getPythonPath(), args, {
+    // Parse Python command (handles "py -3" format)
+    const pythonCmd = this.config.getPythonPath();
+    const pythonParts = pythonCmd.split(' ');
+    const pythonExe = pythonParts[0];
+    const pythonArgs = pythonParts.slice(1);
+
+    // Spawn Python process with properly split command
+    const proc = spawn(pythonExe, [...pythonArgs, ...args], {
       cwd: autoBuildSource,
       env: processEnv
     });

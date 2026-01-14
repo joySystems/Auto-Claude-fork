@@ -40,7 +40,7 @@ import { DEFAULT_APP_SETTINGS } from '../shared/constants';
 import { readSettingsFile } from './settings-utils';
 import { setupErrorLogging } from './app-logger';
 import { initSentryMain } from './sentry';
-import { preWarmToolCache } from './cli-tool-manager';
+import { preWarmToolCache, configureTools } from './cli-tool-manager';
 import { initializeClaudeProfileManager } from './claude-profile-manager';
 import type { AppSettings } from '../shared/types';
 
@@ -354,6 +354,29 @@ app.whenReady().then(() => {
 
   // Create window
   createWindow();
+
+  // Configure CLI tools with saved settings BEFORE pre-warming cache
+  // This ensures that user-configured paths (from settings.json) are applied
+  // before auto-detection runs, preventing "Not installed" status in setup wizard
+  try {
+    const settings = loadSettingsSync();
+    if (settings.claudePath || settings.pythonPath || settings.gitPath || settings.githubCLIPath) {
+      console.warn('[main] Configuring CLI tools with saved settings:', {
+        claudePath: settings.claudePath ? 'set' : 'not set',
+        pythonPath: settings.pythonPath ? 'set' : 'not set',
+        gitPath: settings.gitPath ? 'set' : 'not set',
+        githubCLIPath: settings.githubCLIPath ? 'set' : 'not set',
+      });
+      configureTools({
+        claudePath: settings.claudePath,
+        pythonPath: settings.pythonPath,
+        gitPath: settings.gitPath,
+        githubCLIPath: settings.githubCLIPath,
+      });
+    }
+  } catch (error) {
+    console.warn('[main] Failed to configure CLI tools from settings:', error);
+  }
 
   // Pre-warm CLI tool cache in background (non-blocking)
   // This ensures CLI detection is done before user needs it

@@ -771,7 +771,30 @@ export function registerClaudeCodeHandlers(): void {
           throw new Error(`Detection failed: ${detectionError instanceof Error ? detectionError.message : 'Unknown error'}`);
         }
 
-        const installed = detectionResult.found ? detectionResult.version || null : null;
+        // If found but version is empty, try to re-validate to get version
+        // This handles cases where initial detection succeeded but version parsing failed
+        let installed = detectionResult.found ? detectionResult.version || null : null;
+
+        // Fallback: If found but no version, try re-validation
+        if (detectionResult.found && !installed && detectionResult.path) {
+          console.warn('[Claude Code] Found CLI but no version, attempting re-validation:', detectionResult.path);
+          try {
+            const [isValid, reValidatedVersion] = await validateClaudeCliAsync(detectionResult.path);
+            if (isValid && reValidatedVersion) {
+              installed = reValidatedVersion;
+              console.warn('[Claude Code] Re-validation succeeded, version:', installed);
+            } else {
+              // Still no version - use "unknown" instead of null to show CLI is installed
+              installed = 'unknown';
+              console.warn('[Claude Code] Re-validation failed, using "unknown" version');
+            }
+          } catch (revalidationError) {
+            console.warn('[Claude Code] Re-validation error:', revalidationError);
+            // Use "unknown" instead of null to indicate CLI is present but version unclear
+            installed = 'unknown';
+          }
+        }
+
         console.log('[Claude Code] Installed version:', installed);
 
         // Fetch latest version from npm
