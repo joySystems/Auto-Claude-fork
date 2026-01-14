@@ -69,6 +69,8 @@
 4. **Create a task** - Describe what you want to build
 5. **Watch it work** - Agents plan, code, and validate autonomously
 
+> 🇷🇺 **Для разработчиков**: Подробное руководство по разработке и сборке на русском языке → [DEVELOPMENT.md](DEVELOPMENT.md)
+
 ---
 
 ## Features
@@ -148,7 +150,10 @@ See [guides/CLI-USAGE.md](guides/CLI-USAGE.md) for complete CLI documentation.
 
 ## Development
 
-Want to build from source or contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) for complete development setup instructions.
+Want to build from source or contribute?
+
+- **🇷🇺 Русская документация**: [DEVELOPMENT.md](DEVELOPMENT.md) - Подробное руководство по разработке и сборке на русском языке
+- **🇬🇧 English documentation**: [CONTRIBUTING.md](CONTRIBUTING.md) - Complete development setup and contribution guidelines
 
 For Linux-specific builds (Flatpak, AppImage), see [guides/linux.md](guides/linux.md).
 
@@ -220,3 +225,271 @@ Commercial licensing available for closed-source use cases.
 [![GitHub Repo stars](https://img.shields.io/github/stars/AndyMik90/Auto-Claude?style=social)](https://github.com/AndyMik90/Auto-Claude/stargazers)
 
 [![Star History Chart](https://api.star-history.com/svg?repos=AndyMik90/Auto-Claude&type=Date)](https://star-history.com/#AndyMik90/Auto-Claude&Date)
+
+📘 Инструкция по запуску и сборке Auto Claude                                                
+  
+  🚀 Запуск в режиме разработки                                                                   
+  Требования:                                                                                  
+  
+  - Node.js >= 22.0.0 (рекомендуется 24+)
+  - npm >= 10.0.0
+  - Python >= 3.10 (для бэкенда)
+
+  1. Установка зависимостей
+
+  # Из корня проекта установить ВСЕ зависимости
+  npm run install:all
+
+  # Или вручную для каждой части:
+
+  # Frontend (Electron)
+  cd apps/frontend
+  npm install
+
+  # Backend (Python)
+  cd apps/backend
+  uv venv
+  uv pip install -r requirements.txt
+
+  2. Запуск приложения
+
+  # Из корня проекта
+  npm start
+
+  # ИЛИ из apps/frontend
+  cd apps/frontend
+  npm run dev
+
+  Что происходит:
+  - Запускается Electron с горячей перезагрузкой (HMR)
+  - Открывается окно приложения
+  - DevTools открываются справа (в dev режиме)
+  - Изменения в коде применяются автоматически
+
+  3. Режим отладки с удаленным подключением
+
+  cd apps/frontend
+  npm run dev  # Уже включает --remote-debugging-port=9222 для E2E тестов
+
+  ---
+  🔨 Сборка приложения для продакшена
+
+  Подготовка к сборке
+
+  1. Обновите версию (если нужно):
+  # Patch: 2.7.4 -> 2.7.5
+  node scripts/bump-version.js patch
+
+  # Minor: 2.7.4 -> 2.8.0
+  node scripts/bump-version.js minor
+
+  # Major: 2.7.4 -> 3.0.0
+  node scripts/bump-version.js major
+
+  2. Убедитесь, что все зависимости установлены:
+  npm run install:all
+
+  Сборка для вашей платформы
+
+  cd apps/frontend
+
+  # Windows (создаст .exe installer)
+  npm run build:win
+
+  # macOS (создаст .dmg)
+  npm run build:mac
+
+  # Linux (создаст .AppImage)
+  npm run build:linux
+
+  # Сборка для всех платформ (требует соответствующих ОС или CI/CD)
+  npm run build
+
+  Где найти результат сборки
+
+  После сборки файлы будут в:
+  apps/frontend/dist/
+  ├── win-unpacked/          # Windows распакованная версия
+  ├── Auto Claude Setup.exe  # Windows installer
+  ├── mac/                   # macOS build
+  ├── Auto Claude.dmg        # macOS installer
+  └── linux-unpacked/        # Linux build
+
+  ---
+  📦 Структура команд
+  ┌──────────────────────┬───────────────────────────────────────────┐
+  │       Команда        │                 Описание                  │
+  ├──────────────────────┼───────────────────────────────────────────┤
+  │ npm start            │ Сборка + запуск Electron (из корня)       │
+  ├──────────────────────┼───────────────────────────────────────────┤
+  │ npm run dev          │ Режим разработки с HMR (из apps/frontend) │
+  ├──────────────────────┼───────────────────────────────────────────┤
+  │ npm run build        │ Сборка для продакшена                     │
+  ├──────────────────────┼───────────────────────────────────────────┤
+  │ npm run build:win    │ Сборка только для Windows                 │
+  ├──────────────────────┼───────────────────────────────────────────┤
+  │ npm run build:mac    │ Сборка только для macOS                   │
+  ├──────────────────────┼───────────────────────────────────────────┤
+  │ npm run build:linux  │ Сборка только для Linux                   │
+  ├──────────────────────┼───────────────────────────────────────────┤
+  │ npm run test:backend │ Запуск тестов Python бэкенда              │
+  └──────────────────────┴───────────────────────────────────────────┘
+  ---
+  🐛 Отладка
+
+  Backend (Python)
+
+  cd apps/backend
+
+  # Запуск spec runner напрямую
+  python spec_runner.py --interactive
+
+  # Запуск с конкретной задачей
+  python spec_runner.py --task "Add user authentication"
+
+  # Запуск автономной сборки
+  python run.py --spec 001
+
+  Frontend (Electron)
+
+  cd apps/frontend
+
+  # Запуск с DevTools
+  npm run dev
+
+  # Логи появляются в консоли терминала
+  # Можно также смотреть в DevTools (F12)
+
+  Логи приложения
+
+  В режиме разработки:
+  - Все логи выводятся в терминал, где запущено npm run dev
+
+  В production:
+  - Windows: %APPDATA%\Auto Claude\logs\
+  - macOS: ~/Library/Logs/Auto Claude/
+  - Linux: ~/.config/Auto Claude/logs/
+
+  ---
+  🔧 Настройка окружения
+
+  Backend (.env файл)
+
+  Создайте apps/backend/.env (пример в .env.example):
+
+  # Claude Code OAuth Token
+  CLAUDE_CODE_OAUTH_TOKEN=your-token-here
+
+  # Graphiti Memory (опционально)
+  GRAPHITI_ENABLED=true
+  ANTHROPIC_API_KEY=your-api-key
+
+  # Electron MCP для E2E тестов (опционально)
+  ELECTRON_MCP_ENABLED=true
+  ELECTRON_DEBUG_PORT=9222
+
+  Frontend (.env файл)
+
+  Создайте apps/frontend/.env (пример в .env.example):
+
+  # Sentry для отчетов об ошибках (опционально)
+  SENTRY_DSN=your-sentry-dsn
+
+  # Режим отладки
+  DEBUG=true
+  DEBUG_UPDATER=true
+
+  ---
+  🚨 Частые проблемы
+
+  1. "Claude Code CLI not found"
+
+  Решение:
+  # Установите Claude Code CLI
+  npm install -g @anthropic-ai/claude-code
+
+  # Проверьте установку
+  claude --version
+
+  2. "Python not found"
+
+  Решение:
+  - Установите Python 3.10+ с https://www.python.org
+  - Убедитесь, что Python в PATH:
+  python --version  # или python3 --version
+
+  3. "Module not found" ошибки
+
+  Решение:
+  # Переустановите зависимости
+  cd apps/frontend
+  rm -rf node_modules package-lock.json
+  npm install
+
+  cd ../backend
+  rm -rf .venv
+  uv venv
+  uv pip install -r requirements.txt
+
+  4. Electron не запускается
+
+  Решение:
+  # Очистите кэш
+  cd apps/frontend
+  npm run clean  # если есть такая команда
+
+  # Или вручную
+  rm -rf node_modules/.vite
+  rm -rf out
+  npm install
+
+  5. "Build failed" при сборке
+
+  Решение:
+  - Проверьте, что все зависимости установлены
+  - Убедитесь, что версия Node.js >= 22
+  - Проверьте свободное место на диске
+  - Попробуйте собрать с --verbose:
+  npm run build:win -- --verbose
+
+  ---
+  📝 CI/CD (GitHub Actions)
+
+  Для автоматической сборки через GitHub Actions:
+
+  1. Пушите изменения в ветку
+  2. Создайте PR в main
+  3. После мержа PR:
+    - GitHub Actions автоматически создаст tag
+    - Соберёт для всех платформ (Windows, macOS, Linux)
+    - Создаст GitHub Release с changelog
+    - Обновит README с последней версией
+
+  Подробности в RELEASE.md
+
+  ---
+  🎯 Быстрый старт для разработчиков
+
+  # 1. Клонировать репозиторий
+  git clone <your-repo-url>
+  cd Auto-Claude-fork
+
+  # 2. Установить зависимости
+  npm run install:all
+
+  # 3. Настроить бэкенд
+  cd apps/backend
+  cp .env.example .env
+  # Отредактируйте .env и добавьте CLAUDE_CODE_OAUTH_TOKEN
+
+  # 4. Запустить приложение
+  cd ../..
+  npm start
+
+  ---
+  Готово! 🎉 Теперь вы можете разрабатывать и собирать Auto Claude!
+
+  Если есть вопросы или проблемы, проверьте:
+  - apps/frontend/README.md - детали по frontend
+  - CLAUDE.md - инструкции для Claude Code
+  - RELEASE.md - процесс релиза
