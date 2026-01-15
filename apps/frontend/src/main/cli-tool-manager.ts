@@ -931,12 +931,13 @@ class CLIToolManager {
       let version: string;
 
       if (needsShell) {
-        // For .cmd/.bat files on Windows, use cmd.exe with argument array
-        // This avoids shell command injection while handling spaces in paths
-        version = execFileSync('cmd.exe', ['/c', claudeCmd, '--version'], {
+        // For .cmd/.bat files on Windows, use shell: true to let Node.js handle .cmd files properly
+        // execFileSync with shell:true will correctly invoke .cmd files without double-quoting issues
+        version = execFileSync(claudeCmd, ['--version'], {
           encoding: 'utf-8',
           timeout: 5000,
           windowsHide: true,
+          shell: true,
           env: getAugmentedEnv(),
         }).trim();
       } else {
@@ -1063,12 +1064,13 @@ class CLIToolManager {
       let stdout: string;
 
       if (needsShell) {
-        // For .cmd/.bat files on Windows, use cmd.exe with argument array
-        // This avoids shell command injection while handling spaces in paths
-        const result = await execFileAsync('cmd.exe', ['/c', claudeCmd, '--version'], {
+        // For .cmd/.bat files on Windows, use shell: true to let Node.js handle .cmd files properly
+        // execFileAsync with shell:true will correctly invoke .cmd files without double-quoting issues
+        const result = await execFileAsync(claudeCmd, ['--version'], {
           encoding: 'utf-8',
           timeout: 5000,
           windowsHide: true,
+          shell: true,
           env: await getAugmentedEnvAsync(),
         });
         stdout = result.stdout;
