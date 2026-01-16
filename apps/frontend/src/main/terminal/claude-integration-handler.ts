@@ -15,6 +15,7 @@ import * as SessionHandler from './session-handler';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { escapeShellArg, buildCdCommand } from '../../shared/utils/shell-escape';
 import { getClaudeCliInvocation, getClaudeCliInvocationAsync } from '../claude-cli-utils';
+import { readSettingsFile } from '../settings-utils';
 import type {
   TerminalProcess,
   WindowGetter,
@@ -22,8 +23,61 @@ import type {
   OAuthTokenEvent
 } from './types';
 
-function normalizePathForBash(envPath: string): string {
-  return process.platform === 'win32' ? envPath.replace(/;/g, ':') : envPath;
+/**
+ * WSL configuration for Claude CLI invocation
+ */
+interface WslConfig {
+  enabled: boolean;
+  distribution?: string;
+}
+
+/**
+ * Get WSL settings from the app settings file
+ */
+function getWslConfig(): WslConfig {
+  if (!isWindows) {
+    return { enabled: false };
+  }
+
+  try {
+    const settings = readSettingsFile();
+    if (settings && settings.useWsl === true) {
+      return {
+        enabled: true,
+        distribution: settings.wslDistribution as string | undefined,
+      };
+    }
+  } catch (error) {
+    debugError('[ClaudeIntegration] Failed to read WSL settings:', error);
+  }
+
+  return { enabled: false };
+}
+
+/**
+ * Check if the current platform is Windows
+ */
+const isWindows = process.platform === 'win32';
+
+/**
+ * Build PATH prefix for Claude CLI invocation.
+ * Uses platform-appropriate syntax:
+ * - Windows: set PATH=...&&  (no spaces around &&)
+ * - Unix: PATH='...' (with shell escaping)
+ */
+function buildPathPrefix(envPath: string | undefined): string {
+  if (!envPath) {
+    return '';
+  }
+
+  if (isWindows) {
+    // Windows CMD: use 'set' command with && (no spaces)
+    // No escaping needed for PATH since it's system-controlled
+    return `set "PATH=${envPath}"&& `;
+  }
+
+  // Unix: use shell-escaped single quotes
+  return `PATH=${escapeShellArg(envPath)} `;
 }
 
 // ============================================================================
@@ -37,7 +91,8 @@ function normalizePathForBash(envPath: string): string {
 type ClaudeCommandConfig =
   | { method: 'default' }
   | { method: 'temp-file'; escapedTempFile: string }
-  | { method: 'config-dir'; escapedConfigDir: string };
+  | { method: 'config-dir'; escapedConfigDir: string }
+  | { method: 'wsl'; wslDistribution?: string };  // WSL mode for Windows
 
 /**
  * Build the shell command for invoking Claude CLI.
@@ -47,7 +102,11 @@ type ClaudeCommandConfig =
  * - 'temp-file': Sources OAuth token from temp file, then removes it
  * - 'config-dir': Sets CLAUDE_CONFIG_DIR for custom profile location
  *
- * All non-default methods include history-safe prefixes (HISTFILE=, HISTCONTROL=)
+ * Platform differences:
+ * - Windows: Uses CMD syntax (set VAR=value&&, cls, del)
+ * - Unix: Uses bash syntax (VAR=value, clear, source, rm)
+ *
+ * All non-default methods include history-safe prefixes on Unix (HISTFILE=, HISTCONTROL=)
  * to prevent sensitive data from appearing in shell history.
  *
  * @param cwdCommand - Command to change directory (empty string if no change needed)
@@ -61,7 +120,7 @@ type ClaudeCommandConfig =
  * buildClaudeShellCommand('cd /path && ', 'PATH=/bin ', 'claude', { method: 'default' });
  * // Returns: 'cd /path && PATH=/bin claude\r'
  *
- * // Temp file method
+ * // Temp file method (Unix)
  * buildClaudeShellCommand('', '', 'claude', { method: 'temp-file', escapedTempFile: '/tmp/token' });
  * // Returns: 'clear && HISTFILE= HISTCONTROL=ignorespace bash -c "source /tmp/token && rm -f /tmp/token && exec claude"\r'
  */
@@ -71,6 +130,43 @@ export function buildClaudeShellCommand(
   escapedClaudeCmd: string,
   config: ClaudeCommandConfig
 ): string {
+  // WSL mode (Windows only) - invoke Claude CLI through WSL
+  if (config.method === 'wsl' && isWindows) {
+    const wslCmd = config.wslDistribution
+      ? `wsl -d ${config.wslDistribution}`
+      : 'wsl';
+    // In WSL mode, we use Unix-style commands since we're running in Linux
+    // The cwdCommand needs to be converted to WSL path format
+    // For simplicity, we just run claude directly in WSL's current directory
+    return `${wslCmd} claude\r`;
+  }
+
+  if (isWindows) {
+    // Windows CMD syntax - no bash, no history control
+    // Note: On Windows, escapedClaudeCmd should NOT be single-quoted (that's POSIX)
+    // The CLI path is typically like "C:\Users\...\npm\claude.cmd"
+    const claudeCmd = escapedClaudeCmd.replace(/^'|'$/g, ''); // Remove POSIX quotes if present
+
+    switch (config.method) {
+      case 'temp-file': {
+        // Windows: Read token from temp file using 'call', then delete it
+        // Temp file format on Windows should be a .bat that sets the env var
+        const tempFile = config.escapedTempFile.replace(/^'|'$/g, '');
+        return `cls && ${cwdCommand}${pathPrefix}call "${tempFile}" && del /f /q "${tempFile}" && ${claudeCmd}\r`;
+      }
+
+      case 'config-dir': {
+        // Windows: Set CLAUDE_CONFIG_DIR before calling claude
+        const configDir = config.escapedConfigDir.replace(/^'|'$/g, '');
+        return `cls && ${cwdCommand}set "CLAUDE_CONFIG_DIR=${configDir}"&& ${pathPrefix}${claudeCmd}\r`;
+      }
+
+      default:
+        return `${cwdCommand}${pathPrefix}${claudeCmd}\r`;
+    }
+  }
+
+  // Unix (macOS, Linux) - original bash syntax
   switch (config.method) {
     case 'temp-file':
       return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace ${pathPrefix}bash -c "source ${config.escapedTempFile} && rm -f ${config.escapedTempFile} && exec ${escapedClaudeCmd}"\r`;
@@ -404,9 +500,7 @@ export function invokeClaude(
   const cwdCommand = buildCdCommand(cwd);
   const { command: claudeCmd, env: claudeEnv } = getClaudeCliInvocation();
   const escapedClaudeCmd = escapeShellArg(claudeCmd);
-  const pathPrefix = claudeEnv.PATH
-    ? `PATH=${escapeShellArg(normalizePathForBash(claudeEnv.PATH))} `
-    : '';
+  const pathPrefix = buildPathPrefix(claudeEnv.PATH);
   const needsEnvOverride = profileId && profileId !== previousProfileId;
 
   debugLog('[ClaudeIntegration:invokeClaude] Environment override check:', {
@@ -424,14 +518,20 @@ export function invokeClaude(
 
     if (token) {
       const nonce = crypto.randomBytes(8).toString('hex');
-      const tempFile = path.join(os.tmpdir(), `.claude-token-${Date.now()}-${nonce}`);
+      // Windows uses .bat extension, Unix uses no extension (shell script)
+      const tempFile = isWindows
+        ? path.join(os.tmpdir(), `.claude-token-${Date.now()}-${nonce}.bat`)
+        : path.join(os.tmpdir(), `.claude-token-${Date.now()}-${nonce}`);
       const escapedTempFile = escapeShellArg(tempFile);
       debugLog('[ClaudeIntegration:invokeClaude] Writing token to temp file:', tempFile);
-      fs.writeFileSync(
-        tempFile,
-        `export CLAUDE_CODE_OAUTH_TOKEN=${escapeShellArg(token)}\n`,
-        { mode: 0o600 }
-      );
+
+      // Windows: set VAR=value (no quotes around value in batch files)
+      // Unix: export VAR='value' (shell-escaped)
+      const fileContent = isWindows
+        ? `@echo off\r\nset "CLAUDE_CODE_OAUTH_TOKEN=${token}"\r\n`
+        : `export CLAUDE_CODE_OAUTH_TOKEN=${escapeShellArg(token)}\n`;
+
+      fs.writeFileSync(tempFile, fileContent, { mode: 0o600 });
 
       const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'temp-file', escapedTempFile });
       debugLog('[ClaudeIntegration:invokeClaude] Executing command (temp file method, history-safe)');
@@ -456,6 +556,26 @@ export function invokeClaude(
 
   if (activeProfile && !activeProfile.isDefault) {
     debugLog('[ClaudeIntegration:invokeClaude] Using terminal environment for non-default profile:', activeProfile.name);
+  }
+
+  // Check if WSL mode is enabled (Windows only)
+  const wslConfig = getWslConfig();
+  if (wslConfig.enabled) {
+    debugLog('[ClaudeIntegration:invokeClaude] Using WSL mode with distribution:', wslConfig.distribution || 'default');
+    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, {
+      method: 'wsl',
+      wslDistribution: wslConfig.distribution
+    });
+    debugLog('[ClaudeIntegration:invokeClaude] Executing command (WSL method):', command);
+    terminal.pty.write(command);
+
+    if (activeProfile) {
+      profileManager.markProfileUsed(activeProfile.id);
+    }
+
+    finalizeClaudeInvoke(terminal, activeProfile, projectPath, startTime, getWindow, onSessionCapture);
+    debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE COMPLETE (WSL) ==========');
+    return;
   }
 
   const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' });
@@ -491,9 +611,7 @@ export function resumeClaude(
 
   const { command: claudeCmd, env: claudeEnv } = getClaudeCliInvocation();
   const escapedClaudeCmd = escapeShellArg(claudeCmd);
-  const pathPrefix = claudeEnv.PATH
-    ? `PATH=${escapeShellArg(normalizePathForBash(claudeEnv.PATH))} `
-    : '';
+  const pathPrefix = buildPathPrefix(claudeEnv.PATH);
 
   // Always use --continue which resumes the most recent session in the current directory.
   // This is more reliable than --resume with session IDs since Auto Claude already restores
@@ -508,9 +626,25 @@ export function resumeClaude(
     console.warn('[ClaudeIntegration:resumeClaude] sessionId parameter is deprecated and ignored; using claude --continue instead');
   }
 
-  const command = `${pathPrefix}${escapedClaudeCmd} --continue`;
+  // Check if WSL mode is enabled (Windows only)
+  const wslConfig = getWslConfig();
+  if (wslConfig.enabled) {
+    const wslCmd = wslConfig.distribution
+      ? `wsl -d ${wslConfig.distribution}`
+      : 'wsl';
+    terminal.pty.write(`${wslCmd} claude --continue\r`);
+  } else {
+    // Build platform-appropriate command
+    let command: string;
+    if (isWindows) {
+      const claudeCmd = escapedClaudeCmd.replace(/^'|'$/g, ''); // Remove POSIX quotes
+      command = `${pathPrefix}${claudeCmd} --continue`;
+    } else {
+      command = `${pathPrefix}${escapedClaudeCmd} --continue`;
+    }
 
-  terminal.pty.write(`${command}\r`);
+    terminal.pty.write(`${command}\r`);
+  }
 
   // Update terminal title in main process and notify renderer
   terminal.title = 'Claude';
@@ -575,9 +709,7 @@ export async function invokeClaudeAsync(
   const cwdCommand = buildCdCommand(cwd);
   const { command: claudeCmd, env: claudeEnv } = await getClaudeCliInvocationAsync();
   const escapedClaudeCmd = escapeShellArg(claudeCmd);
-  const pathPrefix = claudeEnv.PATH
-    ? `PATH=${escapeShellArg(normalizePathForBash(claudeEnv.PATH))} `
-    : '';
+  const pathPrefix = buildPathPrefix(claudeEnv.PATH);
   const needsEnvOverride = profileId && profileId !== previousProfileId;
 
   debugLog('[ClaudeIntegration:invokeClaudeAsync] Environment override check:', {
@@ -595,14 +727,20 @@ export async function invokeClaudeAsync(
 
     if (token) {
       const nonce = crypto.randomBytes(8).toString('hex');
-      const tempFile = path.join(os.tmpdir(), `.claude-token-${Date.now()}-${nonce}`);
+      // Windows uses .bat extension, Unix uses no extension (shell script)
+      const tempFile = isWindows
+        ? path.join(os.tmpdir(), `.claude-token-${Date.now()}-${nonce}.bat`)
+        : path.join(os.tmpdir(), `.claude-token-${Date.now()}-${nonce}`);
       const escapedTempFile = escapeShellArg(tempFile);
       debugLog('[ClaudeIntegration:invokeClaudeAsync] Writing token to temp file:', tempFile);
-      await fsPromises.writeFile(
-        tempFile,
-        `export CLAUDE_CODE_OAUTH_TOKEN=${escapeShellArg(token)}\n`,
-        { mode: 0o600 }
-      );
+
+      // Windows: set VAR=value (no quotes around value in batch files)
+      // Unix: export VAR='value' (shell-escaped)
+      const fileContent = isWindows
+        ? `@echo off\r\nset "CLAUDE_CODE_OAUTH_TOKEN=${token}"\r\n`
+        : `export CLAUDE_CODE_OAUTH_TOKEN=${escapeShellArg(token)}\n`;
+
+      await fsPromises.writeFile(tempFile, fileContent, { mode: 0o600 });
 
       const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'temp-file', escapedTempFile });
       debugLog('[ClaudeIntegration:invokeClaudeAsync] Executing command (temp file method, history-safe)');
@@ -627,6 +765,26 @@ export async function invokeClaudeAsync(
 
   if (activeProfile && !activeProfile.isDefault) {
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Using terminal environment for non-default profile:', activeProfile.name);
+  }
+
+  // Check if WSL mode is enabled (Windows only)
+  const wslConfig = getWslConfig();
+  if (wslConfig.enabled) {
+    debugLog('[ClaudeIntegration:invokeClaudeAsync] Using WSL mode with distribution:', wslConfig.distribution || 'default');
+    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, {
+      method: 'wsl',
+      wslDistribution: wslConfig.distribution
+    });
+    debugLog('[ClaudeIntegration:invokeClaudeAsync] Executing command (WSL method):', command);
+    terminal.pty.write(command);
+
+    if (activeProfile) {
+      profileManager.markProfileUsed(activeProfile.id);
+    }
+
+    finalizeClaudeInvoke(terminal, activeProfile, projectPath, startTime, getWindow, onSessionCapture);
+    debugLog('[ClaudeIntegration:invokeClaudeAsync] ========== INVOKE CLAUDE COMPLETE (WSL) ==========');
+    return;
   }
 
   const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' });
@@ -658,9 +816,7 @@ export async function resumeClaudeAsync(
   // Async CLI invocation - non-blocking
   const { command: claudeCmd, env: claudeEnv } = await getClaudeCliInvocationAsync();
   const escapedClaudeCmd = escapeShellArg(claudeCmd);
-  const pathPrefix = claudeEnv.PATH
-    ? `PATH=${escapeShellArg(normalizePathForBash(claudeEnv.PATH))} `
-    : '';
+  const pathPrefix = buildPathPrefix(claudeEnv.PATH);
 
   // Always use --continue which resumes the most recent session in the current directory.
   // This is more reliable than --resume with session IDs since Auto Claude already restores
@@ -675,9 +831,25 @@ export async function resumeClaudeAsync(
     console.warn('[ClaudeIntegration:resumeClaudeAsync] sessionId parameter is deprecated and ignored; using claude --continue instead');
   }
 
-  const command = `${pathPrefix}${escapedClaudeCmd} --continue`;
+  // Check if WSL mode is enabled (Windows only)
+  const wslConfig = getWslConfig();
+  if (wslConfig.enabled) {
+    const wslCmd = wslConfig.distribution
+      ? `wsl -d ${wslConfig.distribution}`
+      : 'wsl';
+    terminal.pty.write(`${wslCmd} claude --continue\r`);
+  } else {
+    // Build platform-appropriate command
+    let command: string;
+    if (isWindows) {
+      const claudeCmd = escapedClaudeCmd.replace(/^'|'$/g, ''); // Remove POSIX quotes
+      command = `${pathPrefix}${claudeCmd} --continue`;
+    } else {
+      command = `${pathPrefix}${escapedClaudeCmd} --continue`;
+    }
 
-  terminal.pty.write(`${command}\r`);
+    terminal.pty.write(`${command}\r`);
+  }
 
   terminal.title = 'Claude';
   const win = getWindow();

@@ -281,6 +281,10 @@ export interface AppSettings {
   customTerminalPath?: string; // For 'custom' terminal
   // Anonymous error reporting (Sentry) - enabled by default to help improve the app
   sentryEnabled?: boolean;
+  // WSL (Windows Subsystem for Linux) settings for Claude CLI
+  // When enabled, Claude CLI will be invoked via WSL instead of native Windows
+  useWsl?: boolean;
+  wslDistribution?: string;  // e.g., "Ubuntu-22.04", "Ubuntu", "Debian"
 }
 
 // Auto-Claude Source Environment Configuration (for auto-claude repo .env)

@@ -323,6 +323,35 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
             />
           )}
         </div>
+        {/* WSL Settings - Windows only */}
+        {window.navigator.platform.toLowerCase().includes('win') && (
+          <div className="space-y-3 border-t pt-4 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="useWsl" className="text-sm font-medium text-foreground">{t('general.useWsl')}</Label>
+                <p className="text-sm text-muted-foreground">{t('general.useWslDescription')}</p>
+              </div>
+              <Switch
+                id="useWsl"
+                checked={settings.useWsl || false}
+                onCheckedChange={(checked) => onSettingsChange({ ...settings, useWsl: checked })}
+              />
+            </div>
+            {settings.useWsl && (
+              <div className="space-y-2 ml-4">
+                <Label htmlFor="wslDistribution" className="text-sm font-medium text-foreground">{t('general.wslDistribution')}</Label>
+                <p className="text-sm text-muted-foreground">{t('general.wslDistributionDescription')}</p>
+                <Input
+                  id="wslDistribution"
+                  placeholder={t('general.wslDistributionPlaceholder')}
+                  className="w-full max-w-lg"
+                  value={settings.wslDistribution || ''}
+                  onChange={(e) => onSettingsChange({ ...settings, wslDistribution: e.target.value })}
+                />
+              </div>
+            )}
+          </div>
+        )}
         <div className="space-y-3">
           <Label htmlFor="autoBuildPath" className="text-sm font-medium text-foreground">{t('general.autoClaudePath')}</Label>
           <p className="text-sm text-muted-foreground">{t('general.autoClaudePathDescription')}</p>
