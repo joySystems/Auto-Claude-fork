@@ -51,15 +51,12 @@ async function validateClaudeCliAsync(cliPath: string): Promise<[boolean, string
     // /s = strip first and last quotes, preserving inner quotes
     // /c = run command then terminate
     if (isWindows && /\.(cmd|bat)$/i.test(cliPath)) {
-      // Get cmd.exe path from environment or use default
-      const cmdExe = process.env.ComSpec
-        || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
-      // Use double-quoted command line for paths with spaces
-      const cmdLine = `""${cliPath}" --version"`;
-      const result = await execFileAsync(cmdExe, ['/d', '/s', '/c', cmdLine], {
+      // For .cmd/.bat files on Windows, use shell: true which handles quoting automatically
+      const result = await execFileAsync(cliPath, ['--version'], {
         encoding: 'utf-8',
         timeout: 5000,
         windowsHide: true,
+        shell: true,
         env,
       });
       stdout = result.stdout;
@@ -105,19 +102,29 @@ async function scanClaudeInstallations(activePath: string | null): Promise<Claud
     cliPath: string,
     source: ClaudeInstallationInfo['source']
   ) => {
+    // On Windows, npm creates both 'claude' (Unix script) and 'claude.cmd' (Windows batch)
+    // If we get a path without extension on Windows, prefer .cmd version
+    let actualPath = cliPath;
+    if (isWindows && !path.extname(cliPath)) {
+      const cmdPath = `${cliPath}.cmd`;
+      if (existsSync(cmdPath)) {
+        actualPath = cmdPath;
+      }
+    }
+
     // Normalize path for comparison
-    const normalizedPath = path.resolve(cliPath);
+    const normalizedPath = path.resolve(actualPath);
     if (seenPaths.has(normalizedPath)) return;
 
-    if (!existsSync(cliPath)) return;
+    if (!existsSync(actualPath)) return;
 
     // Security validation: reject paths with shell metacharacters or directory traversal
-    if (!isSecurePath(cliPath)) {
-      console.warn('[Claude Code] Rejecting insecure path:', cliPath);
+    if (!isSecurePath(actualPath)) {
+      console.warn('[Claude Code] Rejecting insecure path:', actualPath);
       return;
     }
 
-    const [isValid, version] = await validateClaudeCliAsync(cliPath);
+    const [isValid, version] = await validateClaudeCliAsync(actualPath);
     if (!isValid) return;
 
     seenPaths.add(normalizedPath);

@@ -106,9 +106,12 @@ export const COMMON_BIN_PATHS: Record<string, string[]> = {
     '/usr/sbin',              // System admin binaries
   ],
   win32: [
-    // Windows usually handles PATH better, but we can add common locations
+    // Node.js и npm необходимы для работы Claude CLI
+    'C:\\Program Files\\nodejs',
+    'C:\\Program Files (x86)\\nodejs',
     'C:\\Program Files\\Git\\cmd',
     'C:\\Program Files\\GitHub CLI',
+    '~\\AppData\\Roaming\\npm',
   ],
 };
 
@@ -218,9 +221,15 @@ export function getAugmentedEnv(additionalPaths?: string[]): Record<string, stri
   // On Windows, we need C:\Windows\System32 for cmd.exe and other system tools.
   let currentPath = env.PATH || '';
 
-  const pathSetForEssentials = new Set(currentPath.split(pathSeparator).filter(Boolean));
+  const pathEntries = currentPath.split(pathSeparator).filter(Boolean);
+  const pathSetForEssentials = platform === 'win32'
+    ? new Set(pathEntries.map(p => p.toLowerCase()))
+    : new Set(pathEntries);
   const essentialPaths = platform === 'win32' ? ESSENTIAL_WINDOWS_PATHS : ESSENTIAL_SYSTEM_PATHS;
-  const missingEssentials = essentialPaths.filter(p => !pathSetForEssentials.has(p));
+  const missingEssentials = essentialPaths.filter(p => {
+    const checkPath = platform === 'win32' ? p.toLowerCase() : p;
+    return !pathSetForEssentials.has(checkPath);
+  });
 
   if (missingEssentials.length > 0) {
     // Append essential paths if missing (append, not prepend, to respect user's PATH)

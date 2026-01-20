@@ -239,11 +239,25 @@ def _validate_claude_cli(cli_path: str) -> tuple[bool, str | None]:
     try:
         is_windows = platform.system() == "Windows"
 
-        # Augment PATH with the CLI directory for proper resolution
+        # Augment PATH with the CLI directory and standard Node.js/npm paths for proper resolution
+        # Добавляем пути к Node.js и npm для корректной работы Claude CLI на Windows
         env = os.environ.copy()
         cli_dir = os.path.dirname(cli_path)
+        
+        paths_to_add = []
         if cli_dir:
-            env["PATH"] = cli_dir + os.pathsep + env.get("PATH", "")
+            paths_to_add.append(cli_dir)
+            
+        if is_windows:
+            paths_to_add.extend([
+                "C:\\Program Files\\nodejs",
+                "C:\\Program Files (x86)\\nodejs",
+                str(Path.home() / "AppData" / "Roaming" / "npm"),
+            ])
+            
+        if paths_to_add:
+            current_path = env.get("PATH", "")
+            env["PATH"] = os.pathsep.join(paths_to_add) + (os.pathsep + current_path if current_path else "")
 
         # For Windows .cmd/.bat files, use cmd.exe with proper quoting
         # /d = disable AutoRun registry commands

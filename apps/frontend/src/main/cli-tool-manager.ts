@@ -744,8 +744,16 @@ class CLIToolManager {
     // 3. System PATH (augmented)
     const systemClaudePath = findExecutable('claude');
     if (systemClaudePath) {
-      const validation = this.validateClaude(systemClaudePath);
-      const result = buildClaudeDetectionResult(systemClaudePath, validation, 'system-path', 'Using system Claude CLI');
+      // On Windows, prefer .cmd version if it exists
+      let actualPath = systemClaudePath;
+      if (process.platform === 'win32' && !path.extname(systemClaudePath)) {
+        const cmdPath = `${systemClaudePath}.cmd`;
+        if (existsSync(cmdPath)) {
+          actualPath = cmdPath;
+        }
+      }
+      const validation = this.validateClaude(actualPath);
+      const result = buildClaudeDetectionResult(actualPath, validation, 'system-path', 'Using system Claude CLI');
       if (result) return result;
     }
 
@@ -753,8 +761,16 @@ class CLIToolManager {
     if (process.platform === 'win32') {
       const whereClaudePath = findWindowsExecutableViaWhere('claude', '[Claude CLI]');
       if (whereClaudePath) {
-        const validation = this.validateClaude(whereClaudePath);
-        const result = buildClaudeDetectionResult(whereClaudePath, validation, 'system-path', 'Using Windows Claude CLI');
+        // On Windows, prefer .cmd version if it exists
+        let actualPath = whereClaudePath;
+        if (!path.extname(whereClaudePath)) {
+          const cmdPath = `${whereClaudePath}.cmd`;
+          if (existsSync(cmdPath)) {
+            actualPath = cmdPath;
+          }
+        }
+        const validation = this.validateClaude(actualPath);
+        const result = buildClaudeDetectionResult(actualPath, validation, 'system-path', 'Using Windows Claude CLI');
         if (result) return result;
       }
     }
@@ -926,14 +942,24 @@ class CLIToolManager {
    */
   private validateClaude(claudeCmd: string): ToolValidation {
     try {
-      const needsShell = shouldUseShell(claudeCmd);
+      // On Windows, npm creates both 'claude' (Unix script) and 'claude.cmd' (Windows batch)
+      // If we get a path without extension on Windows, try .cmd first
+      let actualPath = claudeCmd;
+      if (process.platform === 'win32' && !path.extname(claudeCmd)) {
+        const cmdPath = `${claudeCmd}.cmd`;
+        if (existsSync(cmdPath)) {
+          actualPath = cmdPath;
+        }
+      }
+
+      const needsShell = shouldUseShell(actualPath);
 
       let version: string;
 
       if (needsShell) {
         // For .cmd/.bat files on Windows, use shell: true to let Node.js handle .cmd files properly
         // execFileSync with shell:true will correctly invoke .cmd files without double-quoting issues
-        version = execFileSync(claudeCmd, ['--version'], {
+        version = execFileSync(actualPath, ['--version'], {
           encoding: 'utf-8',
           timeout: 5000,
           windowsHide: true,
@@ -942,7 +968,7 @@ class CLIToolManager {
         }).trim();
       } else {
         // For .exe files and non-Windows, use execFileSync
-        version = execFileSync(claudeCmd, ['--version'], {
+        version = execFileSync(actualPath, ['--version'], {
           encoding: 'utf-8',
           timeout: 5000,
           windowsHide: true,
@@ -1059,14 +1085,24 @@ class CLIToolManager {
    */
   private async validateClaudeAsync(claudeCmd: string): Promise<ToolValidation> {
     try {
-      const needsShell = shouldUseShell(claudeCmd);
+      // On Windows, npm creates both 'claude' (Unix script) and 'claude.cmd' (Windows batch)
+      // If we get a path without extension on Windows, try .cmd first
+      let actualPath = claudeCmd;
+      if (process.platform === 'win32' && !path.extname(claudeCmd)) {
+        const cmdPath = `${claudeCmd}.cmd`;
+        if (await existsAsync(cmdPath)) {
+          actualPath = cmdPath;
+        }
+      }
+
+      const needsShell = shouldUseShell(actualPath);
 
       let stdout: string;
 
       if (needsShell) {
         // For .cmd/.bat files on Windows, use shell: true to let Node.js handle .cmd files properly
         // execFileAsync with shell:true will correctly invoke .cmd files without double-quoting issues
-        const result = await execFileAsync(claudeCmd, ['--version'], {
+        const result = await execFileAsync(actualPath, ['--version'], {
           encoding: 'utf-8',
           timeout: 5000,
           windowsHide: true,
@@ -1076,7 +1112,7 @@ class CLIToolManager {
         stdout = result.stdout;
       } else {
         // For .exe files and non-Windows, use execFileAsync
-        const result = await execFileAsync(claudeCmd, ['--version'], {
+        const result = await execFileAsync(actualPath, ['--version'], {
           encoding: 'utf-8',
           timeout: 5000,
           windowsHide: true,
@@ -1292,8 +1328,16 @@ class CLIToolManager {
     // 3. System PATH (augmented) - using async findExecutable
     const systemClaudePath = await findExecutableAsync('claude');
     if (systemClaudePath) {
-      const validation = await this.validateClaudeAsync(systemClaudePath);
-      const result = buildClaudeDetectionResult(systemClaudePath, validation, 'system-path', 'Using system Claude CLI');
+      // On Windows, prefer .cmd version if it exists
+      let actualPath = systemClaudePath;
+      if (process.platform === 'win32' && !path.extname(systemClaudePath)) {
+        const cmdPath = `${systemClaudePath}.cmd`;
+        if (await existsAsync(cmdPath)) {
+          actualPath = cmdPath;
+        }
+      }
+      const validation = await this.validateClaudeAsync(actualPath);
+      const result = buildClaudeDetectionResult(actualPath, validation, 'system-path', 'Using system Claude CLI');
       if (result) return result;
     }
 
@@ -1301,8 +1345,16 @@ class CLIToolManager {
     if (process.platform === 'win32') {
       const whereClaudePath = await findWindowsExecutableViaWhereAsync('claude', '[Claude CLI]');
       if (whereClaudePath) {
-        const validation = await this.validateClaudeAsync(whereClaudePath);
-        const result = buildClaudeDetectionResult(whereClaudePath, validation, 'system-path', 'Using Windows Claude CLI');
+        // On Windows, prefer .cmd version if it exists
+        let actualPath = whereClaudePath;
+        if (!path.extname(whereClaudePath)) {
+          const cmdPath = `${whereClaudePath}.cmd`;
+          if (await existsAsync(cmdPath)) {
+            actualPath = cmdPath;
+          }
+        }
+        const validation = await this.validateClaudeAsync(actualPath);
+        const result = buildClaudeDetectionResult(actualPath, validation, 'system-path', 'Using Windows Claude CLI');
         if (result) return result;
       }
     }
